@@ -1,4 +1,4 @@
-/* exported defaultOptions, getOptions, onError, supportsWindowId, supportsTabReset, IconDrawer, supportsActualBoundingBoxes */
+/* exported defaultOptions, getOptions, onError, IconDrawer, supportsActualBoundingBoxes */
 "use strict";
 
 var defaultOptions = {
@@ -25,33 +25,6 @@ function onError(error) {
     if (debugging) {
         // eslint-disable-next-line no-console
         console.log(`Error: ${error}`);
-    }
-}
-
-/* Whether `windowId` is supported as an parameter to browserAction.setIcon and
- * browserAction.setBadgeText
- * Firefox version >= 62
- */
-async function supportsWindowId() {
-    if (!browser.runtime.getBrowserInfo) return false;
-    try {
-        const info = await browser.runtime.getBrowserInfo();
-        return info.name === "Firefox" && parseInt(info.version, 10) >= 62;
-    } catch (e) {
-        return false;
-    }
-}
-
-/* Whether browserAction.setIcon and browserAction.setBadgeText support
- * resetting individual tabs icons/badges by passing `null`
- */
-async function supportsTabReset() {
-    if (!browser.runtime.getBrowserInfo) return false;
-    try {
-        const info = await browser.runtime.getBrowserInfo();
-        return info.name === "Firefox" && parseInt(info.version, 10) >= 59;
-    } catch (e) {
-        return false;
     }
 }
 

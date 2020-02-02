@@ -6,8 +6,6 @@ async function main() {
     }] */
     await migrate();
     const options = await getOptions();
-    const useWindowId = await supportsWindowId();
-    const doTabReset = await supportsTabReset();
 
     let setText;
     let drawer;
@@ -71,9 +69,7 @@ async function main() {
             }
             return;
         }
-        if (doTabReset) {
-            await resetBadgeIconAll();
-        }
+        await resetBadgeIconAll();
         removeListeners();
         main();
     });
@@ -81,13 +77,8 @@ async function main() {
     async function resetBadgeIconAll() {
         resetBadgeIcon(null);
         if (options.scope === "global") return;
-        if (useWindowId) {
-            const tabs = await browser.tabs.query({active: true});
-            await Promise.all(tabs.map(i => resetBadgeIcon({windowId: i.windowId})));
-        } else {
-            const tabs = await browser.tabs.query({});
-            await Promise.all(tabs.map(i => resetBadgeIcon({tabId: i.id})));
-        }
+        const tabs = await browser.tabs.query({active: true});
+        await Promise.all(tabs.map(i => resetBadgeIcon({windowId: i.windowId})));
     }
 
     async function resetBadgeIcon(spec) {
@@ -120,22 +111,6 @@ async function main() {
         await setText({windowId: windowId}, [tabs.length.toString()]);
     }
 
-    async function updateActive(windowId) {
-        const tabs = await tabsQueryFilter({windowId: windowId});
-        const active = tabs.filter(i => i.active)[0];
-        await setText({tabId: active.id}, [tabs.length.toString()]);
-    }
-
-    async function updateActives() {
-        const tabs = await tabsQueryFilter({active: true});
-        await Promise.all(tabs.map(i => updateTab(i.id, i.windowId)));
-    }
-
-    async function updateTab(tabId, windowId) {
-        const tabs = await tabsQueryFilter({windowId: windowId});
-        await setText({tabId: tabId}, [tabs.length.toString()]);
-    }
-
     async function updateBoth() {
         const tabs = await tabsQueryFilter({});
         const total = tabs.length;
@@ -156,56 +131,9 @@ async function main() {
         }
     }
 
-    async function updateBothTab() {
-        const tabs = await tabsQueryFilter({});
-        const total = tabs.length;
-        let counts = new Map();
-        let actives = new Map();
-        for (let i of tabs) {
-            if (counts.has(i.windowId)) {
-                counts.set(i.windowId, counts.get(i.windowId) + 1);
-            } else {
-                counts.set(i.windowId, 1);
-            }
-            if (i.active) {
-                actives.set(i.windowId, i.id);
-            }
-        }
-        if (counts.size === 1) {
-            const active = actives.values().next().value;
-            await setText({tabId: active}, [total.toString()]);
-            return;
-        }
-        for (let [i, active] of actives) {
-            const n = counts.get(i);
-            await setText({tabId: active}, [n.toString(), total.toString()]);
-        }
-    }
-
-    async function initializeCounters() {
-        if (options.scope === "window") {
-            if (useWindowId) {
-                updateWindows();
-            } else {
-                updateActives();
-            }
-        } else if (options.scope === "both") {
-            if (useWindowId) {
-                updateBoth();
-            } else {
-                updateBothTab();
-            }
-        } else if (options.scope === "global") {
-            updateGlobal();
-        } else {
-            onError("invalid scope");
-        }
-    }
-
     async function setTextBadge(spec, text) {
         await browser.browserAction.setBadgeText(Object.assign({text: text[0]}, spec));
     }
-
 
     async function setTextIcon(spec, text) {
         const data = drawer.draw(text, options.iconMargin / 100, options.iconColor);
@@ -231,83 +159,35 @@ async function main() {
     }
 
     if (options.scope === "window") {
-        if (useWindowId) {
-            addListener(browser.tabs.onRemoved, (tabId, removeInfo) => {
-                filterTabs.push(tabId);
-                updateWindow(removeInfo.windowId);
-            });
-            addListener(browser.tabs.onDetached, (_, detachInfo) => {
-                updateWindow(detachInfo.oldWindowId);
-            });
-            addListener(browser.tabs.onCreated, tab => {
-                filterTabs = [];
-                updateWindow(tab.windowId);
-            });
-            addListener(browser.tabs.onAttached, (_, attachInfo) => {
-                updateWindow(attachInfo.newWindowId);
-            });
+        addListener(browser.tabs.onRemoved, (tabId, removeInfo) => {
+            filterTabs.push(tabId);
+            updateWindow(removeInfo.windowId);
+        });
+        addListener(browser.tabs.onDetached, (_, detachInfo) => {
+            updateWindow(detachInfo.oldWindowId);
+        });
+        addListener(browser.tabs.onCreated, tab => {
+            filterTabs = [];
+            updateWindow(tab.windowId);
+        });
+        addListener(browser.tabs.onAttached, (_, attachInfo) => {
+            updateWindow(attachInfo.newWindowId);
+        });
 
-            updateWindows();
-        } else {
-            addListener(browser.tabs.onActivated, activeInfo => {
-                updateTab(activeInfo.tabId, activeInfo.windowId);
-            });
-            addListener(browser.tabs.onDetached, (_, detachInfo) =>{
-                updateActive(detachInfo.oldWindowId);
-            });
-            addListener(browser.tabs.onAttached, (_, attachInfo) =>{
-                updateActive(attachInfo.newWindowId);
-            });
-            addListener(browser.tabs.onCreated, tab => {
-                filterTabs = [];
-                updateTab(tab.id, tab.windowId);
-            });
-            addListener(browser.tabs.onRemoved, (tabId, removeInfo) => {
-                filterTabs.push(tabId);
-                updateActive(removeInfo.windowId);
-            });
-            addListener(browser.tabs.onUpdated, (tabId, changeInfo, tab) => {
-                if ("url" in changeInfo && tab.active) {
-                    updateTab(tabId, tab.windowId);
-                }
-            });
-
-            updateActives();
-        }
+        updateWindows();
     } else if (options.scope === "both") {
-        if (useWindowId) {
-            addListener(browser.tabs.onDetached, updateBoth);
-            addListener(browser.tabs.onAttached, updateBoth);
-            addListener(browser.tabs.onCreated, () => {
-                filterTabs = [];
-                updateBoth();
-            });
-            addListener(browser.tabs.onRemoved, tabId => {
-                filterTabs.push(tabId);
-                updateBoth();
-            });
-
+        addListener(browser.tabs.onDetached, updateBoth);
+        addListener(browser.tabs.onAttached, updateBoth);
+        addListener(browser.tabs.onCreated, () => {
+            filterTabs = [];
             updateBoth();
-        } else {
-            addListener(browser.tabs.onActivated, updateBothTab);
-            addListener(browser.tabs.onDetached, updateBothTab);
-            addListener(browser.tabs.onAttached, updateBothTab);
-            addListener(browser.tabs.onCreated, () => {
-                filterTabs = [];
-                updateBothTab();
-            });
-            addListener(browser.tabs.onRemoved, tabId => {
-                filterTabs.push(tabId);
-                updateBothTab();
-            });
-            addListener(browser.tabs.onUpdated, (tabId, changeInfo, tab) => {
-                if ("url" in changeInfo && tab.active) {
-                    updateBothTab();
-                }
-            });
+        });
+        addListener(browser.tabs.onRemoved, tabId => {
+            filterTabs.push(tabId);
+            updateBoth();
+        });
 
-            updateBothTab();
-        }
+        updateBoth();
     } else if (options.scope === "global") {
         addListener(browser.tabs.onRemoved, tabId => {
             filterTabs.push(tabId);
